@@ -7,14 +7,14 @@
  * Brokeren (Mosquitto) kjorer paa samme maskin som skjermen. Adressen
  * staar i wifi_secrets.h, saa flytting fra Mac til Pi betyr ny opplasting.
  *
- * Maskinvare:  ESP32-S3 Feather. Siste fungerende opplasting ble gjort med
- *              board "Adafruit Feather ESP32-S3" i esp32-kjernen fra
- *              Espressif, og den identifiserte brikken som ESP32-S3.
- *              Eldre notater sier "UM FeatherS3" - sjekk hva som staar
- *              paa brettet, og velg boardet som matcher.
+ * Maskinvare:  UM FeatherS3 (Unexpected Maker), 16 MB flash.
+ * Board:       "UM FeatherS3" i esp32-kjernen fra Espressif
+ *              (esp32:esp32:um_feathers3). Med "Adafruit Feather ESP32-S3"
+ *              kompilerer og kjorer den, men faar feil I2C-pinner og
+ *              melder "fant ingen sensor".
  * Sensor:      AHT20 paa I2C. Wire.begin() uten argumenter tar pinnene
- *              boardvalget sier, saa koden er den samme for begge brettene
- *              - det er boardvalget som maa vaere riktig.
+ *              boardvalget sier, saa det er boardvalget som maa vaere
+ *              riktig.
  * Bibliotek:   Adafruit AHTX0 (2.0.6) med Adafruit Unified Sensor + BusIO,
  *              og PubSubClient (Nick O'Leary) for MQTT
  *
