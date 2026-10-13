@@ -1,0 +1,16 @@
+{
+	"port": 8080,
+	"oppdateringSek": 10,
+	"maxAlderMin": 5,
+
+	"mqttUrl": "mqtt://localhost:1883",
+	"temperatur": { "lav": 20, "hoy": 24 },
+
+	"skannSek": 30,
+	"hjemmeSek": 180,
+	"personer": [
+		{ "navn": "Person 1", "mac": "AA:BB:CC:DD:EE:01" },
+		{ "navn": "Person 2", "mac": "AA:BB:CC:DD:EE:02" },
+		{ "navn": "Person 3", "mac": "AA:BB:CC:DD:EE:03" }
+	]
+}

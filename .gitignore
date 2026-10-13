@@ -1,0 +1,9 @@
+node_modules/
+__pycache__/
+.DS_Store
+
+# Skjermbilder
+*.png
+
+# Wi-Fi-passord til ESP-ene. Mal: esp/*/wifi_secrets.example.h
+esp/*/wifi_secrets.h

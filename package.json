@@ -1,0 +1,11 @@
+{
+	"name": "kollektivmonitor-display",
+	"private": true,
+	"description": "Skjermdelen av KollektivMonitor (TTK8)",
+	"scripts": {
+		"start": "node server.js"
+	},
+	"dependencies": {
+		"mqtt": "^5.16.0"
+	}
+}
