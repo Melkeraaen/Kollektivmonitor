@@ -4,7 +4,7 @@
 	"maxAlderMin": 5,
 
 	"mqttUrl": "mqtt://localhost:1883",
-	"temperatur": { "lav": 20, "hoy": 24 },
+	"temperatur": { "lav": 20, "hoy": 24, "hysterese": 0.5 },
 
 	"skannSek": 30,
 	"hjemmeSek": 180,

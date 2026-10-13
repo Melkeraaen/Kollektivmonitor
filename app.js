@@ -1,5 +1,5 @@
 // Henter /api/status med jevne mellomrom og fyller de tre boksene.
-// Mangler en kilde, står det «–».
+// Mangler en verdi, står det «–», og feilstatusen vises under.
 
 let intervallSek = 10;
 
@@ -20,19 +20,37 @@ function finnVikar(ansvarlig, neste, hjemme) {
 	return { borte: true, vikar: vikar ?? null };
 }
 
+function klokkeslett(ms) {
+	return new Date(ms).toLocaleTimeString("nb-NO", { hour: "2-digit", minute: "2-digit" });
+}
+
+// Feilstatus med siste gyldige mottakstid, f.eks. «Ingen kontakt med bøtta · sist 19:42».
+function feilTekst(kilde) {
+	if (!kilde) return "Ingen kontakt med serveren";
+	return kilde.mottatt ? `${kilde.feil} · sist ${klokkeslett(kilde.mottatt)}` : kilde.feil;
+}
+
 function visSoppel(soppel, hjemme) {
 	const fyll = document.getElementById("soppel-fyll");
 	const ansvarlig = document.getElementById("soppel-ansvarlig");
 	const melding = document.getElementById("soppel-melding");
 
+	// Utdaterte verdier står grått og uten varselfarge.
+	const utdatert = !soppel || soppel.utdatert;
 	const harFyll = soppel && soppel.fyll !== null;
 	fyll.textContent = harFyll ? `${soppel.fyll} %` : "–";
-	fyll.className = harFyll ? `stor ${soppel.nivaa}` : "stor";
+	fyll.className = !harFyll ? "stor" : utdatert ? "stor utdatert" : `stor ${soppel.nivaa}`;
 
 	const navn = soppel ? soppel.ansvarlig : null;
-	const { borte, vikar } = finnVikar(navn, soppel?.neste, hjemme);
+	const { borte, vikar } = utdatert ? { borte: false, vikar: null } : finnVikar(navn, soppel.neste, hjemme);
 	ansvarlig.textContent = navn ? `Ansvar: ${navn}` : "–";
-	ansvarlig.className = borte ? "borte" : "";
+	ansvarlig.className = utdatert ? "utdatert" : borte ? "borte" : "";
+
+	if (!soppel || soppel.feil) {
+		melding.textContent = feilTekst(soppel);
+		melding.className = "melding feil";
+		return;
+	}
 
 	let tekst = "";
 	if (harFyll && navn && (soppel.nivaa === "full" || soppel.nivaa === "nesten_full")) {
@@ -44,21 +62,34 @@ function visSoppel(soppel, hjemme) {
 	melding.className = harFyll ? `melding ${soppel.nivaa}` : "melding";
 }
 
+const anbefalinger = {
+	opp: { tekst: "Skru opp varmen", klasse: "kald" },
+	ned: { tekst: "Skru ned varmen", klasse: "varm" },
+	uendret: { tekst: "La varmen stå", klasse: "" }
+};
+
 function visInneklima(inneklima) {
 	const temperatur = document.getElementById("temperatur");
 	const fuktighet = document.getElementById("fuktighet");
+	const melding = document.getElementById("inneklima-melding");
 
-	if (!inneklima) {
+	// Ved temperaturfeil vises ingen varmeanbefaling.
+	if (!inneklima || inneklima.feil) {
 		temperatur.textContent = "–";
 		temperatur.className = "stor";
 		fuktighet.textContent = "–";
+		melding.textContent = feilTekst(inneklima);
+		melding.className = "melding feil";
 		return;
 	}
 
+	const anbefaling = anbefalinger[inneklima.anbefaling];
 	temperatur.textContent = `${norsk(inneklima.temperatur, 1)}°`;
-	temperatur.className = `stor ${inneklima.nivaa}`;
+	temperatur.className = `stor ${anbefaling.klasse}`;
 	// AHT20 måler fuktighet med ±2 %, så desimaler gir ingen mening.
 	fuktighet.textContent = `${Math.round(inneklima.fuktighet)} % fuktighet`;
+	melding.textContent = anbefaling.tekst;
+	melding.className = `melding ${anbefaling.klasse}`;
 }
 
 function visHjemme(hjemme) {
