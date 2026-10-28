@@ -80,14 +80,17 @@ til `PresenceLab` (iPhone: *Privat Wi-Fi-adresse* = **Fast**) og les av MAC-adre
 
 Navnene må være skrevet likt som `BEBOERE` i `esp/soppel/soppel.ino`.
 
-**5. Autostart.** Skrivebordet er labwc med autologin. labwc kjører både systemets og
-brukerens `autostart`, så linja kommer i tillegg til det som starter fra før:
+**5. Starte.** Systemet startes for hånd, ikke ved oppstart, siden Pi-en også brukes
+til andre ting. Kjør det fra en terminal på Pi-ens eget skrivebord, ikke over SSH, for
+der finner ikke Chromium skjermen:
 
-    mkdir -p ~/.config/labwc
-    echo "$HOME/kollektivmonitor-display/start.sh &" >> ~/.config/labwc/autostart
+    cd ~/kollektivmonitor-display && ./start.sh
 
-**6. Sjekk.** Etter `sudo reboot` skal skjermen vise «Venter på …» til ESP-ene sender.
-Over SSH:
+Skjermen viser «Venter på …» til ESP-ene sender. Alt+F4 lukker ikke fullskjermen.
+Bruk `pkill chromium` over SSH, eller fra tekstkonsollen (Ctrl+Alt+F2, logg inn, og
+Ctrl+Alt+F7 tilbake). Da stopper også backend og `hjemme.sh`.
+
+**6. Sjekk.** Mens systemet kjører, over SSH:
 
     curl -s localhost:8080/api/status
     mosquitto_sub -u kollektivmonitor -P <passord> -t 'kollektivmonitor/#' -v
