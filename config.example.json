@@ -9,8 +9,8 @@
 	"skannSek": 30,
 	"hjemmeSek": 180,
 	"personer": [
-		{ "navn": "Person 1", "mac": "AA:BB:CC:DD:EE:01" },
-		{ "navn": "Person 2", "mac": "AA:BB:CC:DD:EE:02" },
-		{ "navn": "Person 3", "mac": "AA:BB:CC:DD:EE:03" }
+		{ "navn": "Elias", "mac": "AA:BB:CC:DD:EE:01" },
+		{ "navn": "Henrik", "mac": "AA:BB:CC:DD:EE:02" },
+		{ "navn": "Sigurd", "mac": "AA:BB:CC:DD:EE:03" }
 	]
 }

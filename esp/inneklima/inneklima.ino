@@ -35,7 +35,8 @@
  * Se paa meldingene fra en maskin paa nettet:
  *   mosquitto_sub -h <broker> -t kollektivmonitor/inneklima -v
  *
- * Wi-Fi-nettene og brokeren ligger i wifi_secrets.h i samme mappe, som IKKE er i Git.
+ * Wi-Fi-nettene, brokeren og MQTT-brukeren ligger i wifi_secrets.h i samme
+ * mappe, som IKKE er i Git.
  * Kopier wifi_secrets.example.h til wifi_secrets.h og fyll inn. Mangler
  * fila, stopper kompileringen paa #include-linja under - med vilje.
  *
@@ -253,11 +254,11 @@ static void publiser() {
 static void kobleTilBroker() {
   Serial.printf("[inneklima] Kobler til MQTT-broker %s:%u ...\n", MQTT_BROKER, MQTT_PORT);
 
-  if (mqtt.connect(VERTSNAVN)) {
+  if (mqtt.connect(VERTSNAVN, MQTT_BRUKER, MQTT_PASSORD)) {
     Serial.println("[inneklima] Koblet til brokeren.");
   } else {
     Serial.printf("[inneklima] Brokeren svarte ikke (state %d). Kjorer Mosquitto, "
-                  "og er adressen i wifi_secrets.h riktig?\n", mqtt.state());
+                  "og stemmer adressen, brukeren og passordet i wifi_secrets.h?\n", mqtt.state());
   }
 }
 

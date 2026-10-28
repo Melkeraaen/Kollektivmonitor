@@ -88,7 +88,8 @@ function mottaHjemme(tekst) {
 const mqttKlient = mqtt.connect(config.mqttUrl);
 
 mqttKlient.on("connect", () => {
-	console.log(`mqtt: koblet til ${config.mqttUrl}`);
+	// Bare vert og port. mqttUrl kan inneholde brukernavn og passord.
+	console.log(`mqtt: koblet til ${new URL(config.mqttUrl).host}`);
 	mqttKlient.subscribe(["kollektivmonitor/soppel", "kollektivmonitor/inneklima", "kollektivmonitor/hjemme"]);
 });
 

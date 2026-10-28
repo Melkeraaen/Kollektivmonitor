@@ -15,14 +15,19 @@
 #pragma once
 
 static const char *WIFI_NETT[][2] = {
-  { "hjemmenettet", "passordet-hjemme" },
-  { "iPhone-hotspot", "passordet-paa-hotspot" },
+  { "PresenceLab", "geir" },
 };
 
 /*
- * MQTT-brokeren (Mosquitto) paa maskinen som kjorer skjermen. IP-adresse,
- * ikke .local-navn: PubSubClient slaar ikke opp mDNS-navn. Reserver
- * adressen i ruteren saa den ikke flytter seg.
+ * MQTT-brokeren (Mosquitto) paa Pi 5. Pi-en er selv hotspot (PresenceLab),
+ * saa adressen er alltid 10.42.0.1. IP-adresse, ikke .local-navn:
+ * PubSubClient slaar ikke opp mDNS-navn.
+ *
+ * Brokeren deles med et annet prosjekt paa Pi-en og krever brukernavn og
+ * passord. KollektivMonitor har sin egen bruker og holder seg til emnene
+ * kollektivmonitor/...
  */
-static const char *MQTT_BROKER = "192.168.68.XXX";
+static const char *MQTT_BROKER = "10.42.0.1";
 static const uint16_t MQTT_PORT = 1883;
+static const char *MQTT_BRUKER = "kollektivmonitor";
+static const char *MQTT_PASSORD = "passordet-til-mqtt-brukeren";

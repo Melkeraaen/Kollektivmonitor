@@ -10,3 +10,6 @@ esp/*/wifi_secrets.h
 
 # Rapporten
 *.pdf
+
+# Lokale innstillinger, med MQTT-passordet på Pi-en. Mal: config.example.json
+config.json

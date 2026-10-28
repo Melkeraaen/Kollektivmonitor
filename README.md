@@ -15,18 +15,16 @@ henter dette med jevne mellomrom. Mangler en kilde, står det «–».
 
 ## Installere
 
-Krever Node 18 eller nyere og Mosquitto.
+Krever Node 18 eller nyere og Mosquitto. For Pi-en, se «Kjøre på Raspberry Pi 5» under.
 
     brew install mosquitto                                   # Mac
-    sudo apt install nodejs npm mosquitto mosquitto-clients chromium arp-scan  # Pi
-    sudo cp mosquitto.conf /etc/mosquitto/conf.d/kollektivmonitor.conf   # Pi
     npm install
 
-`arp-scan` gir sikrest «hjemme», og må kunne kjøres uten passord (Mac: `/opt/homebrew/bin/arp-scan`):
+På Macen gir `arp-scan` sikrest «hjemme», og må kunne kjøres uten passord:
 
-    echo "$USER ALL=(root) NOPASSWD: /usr/sbin/arp-scan" | sudo tee /etc/sudoers.d/arp-scan
+    echo "$USER ALL=(root) NOPASSWD: /opt/homebrew/bin/arp-scan" | sudo tee /etc/sudoers.d/arp-scan
 
-Uten den leses ARP-cachen (`ip neigh` på Pi, `arp -a` på Mac).
+Uten den leses ARP-cachen (`arp -a`).
 
 ## Konfigurere
 
@@ -35,11 +33,61 @@ Uten den leses ARP-cachen (`ip neigh` på Pi, `arp -a` på Mac).
 Fyll inn navn og MAC-adresse for hver person. Bruk telefonens faste Wi-Fi-adresse.
 
 ESP-ene lastes opp med Arduino IDE og trenger biblioteket PubSubClient. Kopier
-`wifi_secrets.example.h` til `wifi_secrets.h` i samme mappe, og fyll inn nettene og
-IP-adressen til maskinen som kjører Mosquitto.
+`wifi_secrets.example.h` til `wifi_secrets.h` i samme mappe, og fyll inn nettet,
+IP-adressen til maskinen som kjører Mosquitto og MQTT-brukeren.
 
 ## Starte
 
     ./start.sh    # starter Mosquitto (hvis den ikke kjører), backend, hjemme.sh og skjerm
 
 Se meldingene fra ESP-ene: `mosquitto_sub -h localhost -t 'kollektivmonitor/#' -v`
+
+## Kjøre på Raspberry Pi 5
+
+Pi-en er allerede hotspot for et annet prosjekt (`PresenceLab`, 2,4 GHz, `10.42.0.1`),
+og Mosquitto kjører som tjeneste med passord. KollektivMonitor bruker begge, med egen
+MQTT-bruker og egne emner, og endrer ikke oppsettet.
+
+**1. Pakker og kode.** `arp-scan` skal ikke installeres: den ville skannet `eth0`,
+som er NTNU-nettet. `hjemme.sh` spør hotspoten i stedet.
+
+    sudo apt update && sudo apt install -y nodejs npm
+    cd ~ && git clone https://github.com/Melkeraaen/kollektivmonitor-display.git
+    cd kollektivmonitor-display && npm install
+
+**2. MQTT-bruker.** Ikke kopier inn `mosquitto.conf`, den kolliderer med lytterne som
+finnes. Legg brukeren til i passordfila uten `-c` (den lager fila på nytt og sletter de
+andre brukerne). Bruk bare bokstaver og tall i passordet, siden det står i en URL.
+
+    sudo mosquitto_passwd /etc/mosquitto/presence-passwd kollektivmonitor
+    sudo systemctl reload mosquitto
+    mosquitto_sub -u kollektivmonitor -P <passord> -t 'kollektivmonitor/#' -W 3   # «Timed out» = innlogget
+
+**3. Hotspot.** Finnes allerede. Sjekk den, og hent Wi-Fi-passordet til `wifi_secrets.h`
+i begge ESP-mappene:
+
+    iw dev wlan0 info | grep -E 'ssid|type'        # ssid PresenceLab, type AP
+    nmcli -s -g 802-11-wireless-security.psk connection show PresenceLab
+
+**4. `config.json`.**
+
+    cp config.example.json config.json
+
+Sett `"mqttUrl": "mqtt://kollektivmonitor:<passord>@localhost:1883"`. Koble telefonene
+til `PresenceLab` (iPhone: *Privat Wi-Fi-adresse* = **Fast**) og les av MAC-adressene:
+
+    iw dev wlan0 station dump | grep ^Station
+
+Navnene må være skrevet likt som `BEBOERE` i `esp/soppel/soppel.ino`.
+
+**5. Autostart.** Skrivebordet er labwc med autologin. labwc kjører både systemets og
+brukerens `autostart`, så linja kommer i tillegg til det som starter fra før:
+
+    mkdir -p ~/.config/labwc
+    echo "$HOME/kollektivmonitor-display/start.sh &" >> ~/.config/labwc/autostart
+
+**6. Sjekk.** Etter `sudo reboot` skal skjermen vise «Venter på …» til ESP-ene sender.
+Over SSH:
+
+    curl -s localhost:8080/api/status
+    mosquitto_sub -u kollektivmonitor -P <passord> -t 'kollektivmonitor/#' -v
