@@ -1,61 +1,34 @@
 /* soppel - ESP32 med HC-SR04 i lokket paa soppelbotta
  *
  * Maaler hvor full botta er, merker naar den er tomt, og holder styr paa
- * hvem i kollektivet som har soppelansvaret. Statusen publiseres som JSON
- * over MQTT paa emnet kollektivmonitor/soppel, og server.js paa Pi-en
- * abonnerer - akkurat som for inneklima-ESP-en.
+ * hvem som har soppelansvaret. Statusen publiseres som JSON paa
+ * kollektivmonitor/soppel. Ansvaret lagres i flash (Preferences) her og
+ * ikke paa Pi-en, saa det overlever at noen av dem er av en stund.
  *
- * ESP-EN EIER ANSVARET. Hvem som staar for tur ligger i flashminnet her
- * (NVS, via Preferences) og ikke paa Pi-en. Da overlever rulleringen baade
- * at ESP-en mister stroemmen og at Pi-en er av i en uke - og det finnes
- * bare ett sted der sannheten bor. Pi-en viser, den bestemmer ingenting.
+ * Board:     "Adafruit ESP32 Feather" (HUZZAH32) i esp32-kjernen
+ * Sensor:    HC-SR04, festet oeverst i botta og pekt rett ned
+ * Bibliotek: PubSubClient
  *
- * Maskinvare:  Adafruit HUZZAH32 - ESP32 Feather (CP2104 USB-brikke)
- * Board:       "Adafruit ESP32 Feather" i esp32-kjernen fra Espressif
- * Sensor:      HC-SR04, festet oeverst i botta og pekt rett ned
- * Bibliotek:   PubSubClient (Nick O'Leary) for MQTT
+ * Kobling:
+ *   VCC  -> USB (5 V), sensoren maaler daarlig paa 3,3 V
+ *   GND  -> GND
+ *   TRIG -> GPIO 26 (A0)
+ *   ECHO -> spenningsdeler -> GPIO 25 (A1)
+ *   ECHO er 5 V. Deleren er 1 kOhm fra ECHO til pinnen og 2 kOhm til GND.
  *
- * KOBLING (sjekk mot det som faktisk sitter paa brettet for du flasher):
- *
- *   HC-SR04 VCC   ->  USB-pinnen (5 V). HC-SR04 er en 5 V-sensor og maaler
- *                     upaalitelig paa 3,3 V.
- *   HC-SR04 GND   ->  GND
- *   HC-SR04 TRIG  ->  GPIO 26 (merket A0). 3,3 V holder som trigger.
- *   HC-SR04 ECHO  ->  spenningsdeler -> GPIO 25 (merket A1)
- *
- *   ECHO er 5 V og ESP32 taaler 3,3 V. Deleren er 1 kOhm fra ECHO til
- *   pinnen og 2 kOhm fra pinnen til GND, som gir 3,3 V. Uten den virker det
- *   gjerne en stund - og saa ikke.
- *
- * FreeRTOS - TRE TASKS, EN KOE, EN MUTEX:
- *
- *   maaleTask     prio 3   Pinger sensoren, tar median av fem ekko og
- *                          legger resultatet i maaleKo.
- *   tilstandTask  prio 2   Venter paa maaleKo. Regner fyllingsgrad og nivaa,
- *                          oppdager tomming, rullerer ansvaret og lagrer.
- *   nettTask      prio 1   Wi-Fi og MQTT. Publiserer hvert 5. sekund.
- *
- *   maaleTask har hoyest prioritet fordi pulseIn() maaler tid: blir tasken
- *   avbrutt midt i et ekko, blir avstanden feil. nettTask har lavest fordi
- *   ingenting gaar galt om en melding kommer 50 ms senere.
- *
- *   Koen skiller maalingen fra logikken - maaleTask vet ingenting om
- *   bottenivaa eller beboere. Mutexen beskytter `status`, som tilstandTask
- *   skriver og nettTask leser naar den publiserer.
+ * Tasks:
+ *   maaleTask     prio 3  median av fem ekko, legges i maaleKo
+ *   tilstandTask  prio 2  fyllingsgrad, nivaa, tomming og ansvar
+ *   nettTask      prio 1  Wi-Fi og MQTT, publiserer hvert 5. sekund
+ *   maaleTask har hoyest prioritet fordi pulseIn() maaler tid. statusMutex
+ *   beskytter status, som tilstandTask skriver og nettTask leser.
  *
  * Meldingen:
  *   {"ok":true,"fyll":72,"nivaa":"delvis","avstand_cm":18.3,
  *    "ansvarlig":"Henrik","neste":"Sigurd",...}
- *   {"ok":false,"feil":"...","ansvarlig":"Henrik","neste":"Sigurd"} naar
- *   det ikke finnes en fersk maaling. Ansvaret er med uansett.
+ *   {"ok":false,"feil":"...","ansvarlig":"Henrik","neste":"Sigurd"}
  *
- * Se paa meldingene (og avstand_cm til kalibrering) fra en maskin paa nettet:
- *   mosquitto_sub -h <broker> -t kollektivmonitor/soppel -v
- *
- * Wi-Fi-nettene, brokeren og MQTT-brukeren ligger i wifi_secrets.h i samme
- * mappe, som IKKE er i Git.
- * Kopier wifi_secrets.example.h til wifi_secrets.h og fyll inn. Mangler
- * fila, stopper kompileringen paa #include-linja under - med vilje.
+ * Kopier wifi_secrets.example.h til wifi_secrets.h og fyll inn.
  */
 
 #include <WiFi.h>
@@ -66,14 +39,9 @@
 
 #include "wifi_secrets.h"
 
-// ===================================================================
-// INNSTILLINGER
-// ===================================================================
-
-// Nettene (WIFI_NETT) staar i wifi_secrets.h. Alle maa vaere 2,4 GHz.
 static const size_t ANTALL_NETT = sizeof(WIFI_NETT) / sizeof(WIFI_NETT[0]);
 
-// DHCP-hostname, og klient-ID mot MQTT-brokeren.
+// Brukes som hostname og MQTT-klient-ID
 static const char *VERTSNAVN = "soppel";
 
 static const char *MQTT_EMNE = "kollektivmonitor/soppel";
@@ -81,123 +49,58 @@ static const char *MQTT_EMNE = "kollektivmonitor/soppel";
 static const uint8_t PIN_TRIG = 26;
 static const uint8_t PIN_ECHO = 25;
 
-/*
- * BOTTA
- *
- * AVSTAND_TOM_CM er fra sensoren ned til bunnen av en tom pose. Botta er
- * ca. 45 cm, men maal det med sensoren paa plass: les avstand_cm i
- * MQTT-meldingen med tom botta. Det tallet skal staa her.
- *
- * AVSTAND_FULL_CM er der vi kaller botta 100 % full. Ikke 0: lokket maa
- * kunne lukkes, og HC-SR04 maaler ikke under ca. 2 cm uansett.
- */
+// Avstand fra sensoren til bunnen av en tom pose, og til der botta regnes
+// som full. TOM er maalt med avstand_cm i meldingen med tom botte.
 static const float AVSTAND_TOM_CM = 45.0;
 static const float AVSTAND_FULL_CM = 8.0;
 
-/*
- * NIVAAENE, i prosent fyllingsgrad.
- *
- *   0 - 15    tom
- *  15 - 75    delvis
- *  75 - 90    nesten full   -> tomming kan registreres etterpaa
- *  90 -       full
- *
- * HYSTERESE er hvor langt forbi en grense tallet maa for nivaaet bytter.
- * Uten den blafrer nivaaet frem og tilbake naar innholdet ligger rett paa
- * en grense - og hvert blaff er en ny farge paa skjermen.
- */
+// Nivaaer i prosent: tom < 15, delvis, nesten full > 75, full > 90.
+// Hysteresen hindrer at nivaaet blafrer naar fyllingen ligger paa en grense.
 static const float GRENSE_TOM = 15.0;
 static const float GRENSE_NESTEN_FULL = 75.0;
 static const float GRENSE_FULL = 90.0;
 static const float HYSTERESE = 3.0;
 
-/*
- * Hvor lenge botta maa ha staatt tom for det regnes som en tomming.
- *
- * Et minutt er lengre enn det tar aa loefte ut posen og sette inn en ny,
- * saa en haand eller en pose som svinger i aapningen blir ikke tatt for en
- * tom botte.
- */
+// Botta maa ha vaert tom saa lenge for det telles som tomming, saa en haand
+// i aapningen ikke teller.
 static const uint32_t TOM_STABIL_MS = 60000;
 
-/*
- * Beboerne, i den rekkefolgen ansvaret gaar. Samme navn som i "Hjemme" paa
- * skjermen.
- *
- * MERK: ansvaret lagres som en plass i denne lista. Endrer du rekkefolgen
- * eller antallet, flytter ansvaret seg til den som staar paa samme plass.
- */
+// Rekkefolgen ansvaret gaar i. Ansvaret lagres som plass i lista, saa
+// endres lista, flytter ansvaret seg.
 static const char *BEBOERE[] = { "Elias", "Henrik", "Sigurd" };
 static const uint8_t ANTALL_BEBOERE = sizeof(BEBOERE) / sizeof(BEBOERE[0]);
 
-// ---- Maaling ----
-
-// Hvor ofte maaleTask leverer en maaling.
 static const uint32_t MAALEINTERVALL_MS = 2000;
 
-/*
- * Hver maaling er median av fem ekko. Medianen og ikke snittet: ett ekko
- * som treffer kanten av posen gir et tall som er helt feil, og det drar
- * snittet med seg men flytter ikke medianen.
- */
+// Median og ikke snitt, siden ett ekko fra kanten av posen kan bli helt feil
 static const uint8_t EKKO_PER_MAALING = 5;
 static const uint8_t MIN_GYLDIGE_EKKO = 3;
 
-// HC-SR04 trenger ca. 60 ms mellom ekko for det forrige har doedd ut.
 static const uint32_t EKKO_PAUSE_MS = 60;
+static const uint32_t EKKO_TIMEOUT_US = 30000;  // ca. 5 m
 
-// 30 ms tilsvarer ca. 5 m. Kommer det ikke noe ekko innen da, kommer det ikke.
-static const uint32_t EKKO_TIMEOUT_US = 30000;
-
-/*
- * Gyldig avstand. Alt lenger enn bunnen pluss litt slakk er ikke innholdet
- * i botta - som regel er lokket aapent og sensoren peker i taket. Det skal
- * hverken tolkes som tom eller full, bare ignoreres.
- */
+// Lenger enn bunnen er som regel aapent lokk, og ignoreres
 static const float MIN_AVSTAND_CM = 2.0;
 static const float MAKS_AVSTAND_CM = AVSTAND_TOM_CM + 10.0;
 
-/*
- * Hvor lenge siste gyldige maaling faar bli staaende for vi sier fra. Kort,
- * fordi det er her et aapent lokk eller en loes ledning viser seg.
- */
+// Eldre maaling enn dette sendes som ok:false
 static const uint32_t MAKS_ALDER_MS = 30000;
 
-// Hvor ofte statusen publiseres.
 static const uint32_t PUBLISERINGSINTERVALL_MS = 5000;
-
-// Hvor lenge vi venter mellom forsoek paa aa koble til brokeren.
 static const uint32_t MQTT_FORSOK_MS = 5000;
-
-// Hvor lenge vi venter paa Wi-Fi for vi river forbindelsen og prover paa nytt.
 static const uint32_t WIFI_FORSOK_MS = 20000;
-
-// Hvor lenge wifiMulti.run() venter paa at det valgte nettet svarer.
 static const uint32_t WIFI_KOBLE_MS = 10000;
 
-// ===================================================================
-// DELT TILSTAND
-// ===================================================================
-
-/*
- * MERK: ingen funksjoner over typene under. Arduino-IDE-en lager
- * prototyper for alle funksjoner og setter dem rett foran den FORSTE
- * funksjonen i fila - staar det en funksjon her, havner prototypene foran
- * Status og Maaling, og kompileringen feiler med "does not name a type".
- */
+// Ingen funksjoner over typene under. Arduino IDE setter prototypene foran
+// den forste funksjonen, og da faar man "does not name a type".
 
 enum Nivaa : uint8_t { TOM, DELVIS, NESTEN_FULL, FULL };
 
-// Det maaleTask legger i koen.
 struct Maaling {
   bool gyldig;
   float avstandCm;
 };
 
-/*
- * Alt nettTask trenger for aa publisere. tilstandTask skriver, nettTask leser,
- * og begge gjor det bare med statusMutex tatt.
- */
 struct Status {
   bool harMaaling;
   float avstandCm;
@@ -233,18 +136,10 @@ static const char *nivaaNavn(Nivaa n) {
   return "ukjent";
 }
 
-// ===================================================================
-// LAGRING
-// ===================================================================
+// ---- Lagring ----
 
-/*
- * Ansvaret, antall tomminger og om botta er "klar for tomming" lagres.
- * Det siste maa med: gaar stroemmen mens botta er full og den tommes mens
- * ESP-en er av, skal tommingen likevel telle naar den kommer tilbake.
- *
- * Flash taaler rundt 100 000 skrivinger per celle. Vi skriver bare naar noe
- * av dette endrer seg - noen ganger i uka - saa det er ingen fare.
- */
+// klarForTomming lagres ogsaa, saa en tomming mens ESP-en er av telles.
+// Det skrives bare naar noe endrer seg, saa flash-slitasje er ikke noe problem.
 static void lesLager() {
   lager.begin("soppel", true);
   status.ansvarlig = lager.getUChar("ansvarlig", 0);
@@ -253,14 +148,14 @@ static void lesLager() {
   status.sisteTomming = (time_t) lager.getULong64("sist", 0);
   lager.end();
 
-  // Lista kan ha blitt kortere siden sist.
+  // Lista kan ha blitt kortere siden sist
   if (status.ansvarlig >= ANTALL_BEBOERE) status.ansvarlig = 0;
 
   Serial.printf("[soppel] Fra lager: %s har ansvaret, %lu tomminger totalt.\n",
                 BEBOERE[status.ansvarlig], (unsigned long) status.antallTomminger);
 }
 
-// Tar en kopi, ikke selve status - skal kalles UTEN mutexen.
+// Tar en kopi og kalles uten mutexen
 static void skrivLager(const Status &s) {
   lager.begin("soppel", false);
   lager.putUChar("ansvarlig", s.ansvarlig);
@@ -270,11 +165,9 @@ static void skrivLager(const Status &s) {
   lager.end();
 }
 
-// ===================================================================
-// MAALING - maaleTask
-// ===================================================================
+// ---- Maaling ----
 
-/** Ett ekko. Returnerer avstanden i cm, eller NAN uten gyldig ekko. */
+// Avstand i cm, eller NAN uten gyldig ekko
 static float ettEkko() {
   digitalWrite(PIN_TRIG, LOW);
   delayMicroseconds(2);
@@ -285,14 +178,13 @@ static float ettEkko() {
   const unsigned long us = pulseIn(PIN_ECHO, HIGH, EKKO_TIMEOUT_US);
   if (us == 0) return NAN;
 
-  // Lyd gaar 0,0343 cm/us, og ekkoet gaar frem og tilbake.
+  // Lydfart 0,0343 cm/us, og ekkoet gaar frem og tilbake
   const float cm = us * 0.0343f / 2.0f;
 
   if (cm < MIN_AVSTAND_CM || cm > MAKS_AVSTAND_CM) return NAN;
   return cm;
 }
 
-/** Median av EKKO_PER_MAALING ekko, eller ugyldig hvis for faa svarte. */
 static Maaling maalMedian() {
   float ekko[EKKO_PER_MAALING];
   uint8_t antall = 0;
@@ -305,7 +197,7 @@ static Maaling maalMedian() {
 
   if (antall < MIN_GYLDIGE_EKKO) return { false, 0.0f };
 
-  // Innstikksortering. Fem tall - ingenting aa hente paa noe smartere.
+  // Innstikksortering, det er bare fem tall
   for (uint8_t i = 1; i < antall; i++) {
     const float v = ekko[i];
     int8_t j = i - 1;
@@ -323,28 +215,21 @@ static void maaleTask(void *) {
   pinMode(PIN_TRIG, OUTPUT);
   pinMode(PIN_ECHO, INPUT);
 
-  // vTaskDelayUntil og ikke vTaskDelay: da blir intervallet 2 s fra start
-  // til start, uansett hvor lang tid selve maalingen tok.
+  // vTaskDelayUntil gir fast takt uansett hvor lang tid maalingen tar
   TickType_t neste = xTaskGetTickCount();
 
   for (;;) {
     const Maaling m = maalMedian();
 
-    /*
-     * Koen har plass til en maaling, og xQueueOverwrite erstatter den som
-     * ligger der. tilstandTask skal ha den nyeste, ikke en koe av gamle.
-     */
+    // Koen har plass til en maaling, og den nyeste overskriver
     xQueueOverwrite(maaleKo, &m);
 
     vTaskDelayUntil(&neste, pdMS_TO_TICKS(MAALEINTERVALL_MS));
   }
 }
 
-// ===================================================================
-// TILSTAND - tilstandTask
-// ===================================================================
+// ---- Tilstand ----
 
-/** Fyllingsgrad i prosent, 0 - 100. */
 static float fyllProsent(float avstandCm) {
   const float p = (AVSTAND_TOM_CM - avstandCm) / (AVSTAND_TOM_CM - AVSTAND_FULL_CM) * 100.0f;
   return constrain(p, 0.0f, 100.0f);
@@ -357,12 +242,7 @@ static Nivaa raattNivaa(float p) {
   return DELVIS;
 }
 
-/**
- * Nytt nivaa med hysterese.
- *
- * Nivaaet gaar opp bare naar tallet er HYSTERESE over grensen, og ned bare
- * naar det er HYSTERESE under. Imellom blir det staaende der det var.
- */
+// Bytter bare nivaa naar fyllingen er HYSTERESE forbi grensen
 static Nivaa nyttNivaa(Nivaa naa, float p) {
   const Nivaa opp = raattNivaa(p - HYSTERESE);
   if (opp > naa) return opp;
@@ -373,23 +253,16 @@ static Nivaa nyttNivaa(Nivaa naa, float p) {
   return naa;
 }
 
-/** Klokka er satt via NTP naar den er forbi 2020. */
+// 0 hvis klokka ikke er satt fra NTP enda (foer 2020)
 static time_t naaUnix() {
   const time_t t = time(nullptr);
   return t > 1577836800 ? t : 0;
 }
 
-/**
- * Behandler en maaling. Kalles med statusMutex tatt.
- * @returns true naar noe som skal lagres har endret seg.
- */
+// Kalles med statusMutex tatt. Returnerer true naar noe skal lagres.
 static bool behandle(const Maaling &m, uint32_t naaMs) {
   if (!m.gyldig) {
-    /*
-     * En ugyldig maaling roerer ikke nivaaet eller tommingen. Den gamle
-     * verdien blir staaende, og meldingen sier fra via alder_s naar den blir
-     * for gammel. Aapner noen lokket, skal ikke det se ut som en tom botte.
-     */
+    // Gamle verdier blir staaende, saa et aapent lokk ikke ser ut som tom botte
     strlcpy(status.feil, "ingen gyldig maaling - lokket aapent?", sizeof(status.feil));
     return false;
   }
@@ -408,21 +281,19 @@ static bool behandle(const Maaling &m, uint32_t naaMs) {
                   nivaaNavn(forrige), nivaaNavn(status.nivaa), status.fyllProsent);
   }
 
-  // ---- Er botta blitt full nok til at en tomming skal telle? ----
-
+  // Full nok til at en tomming skal telle?
   if (status.nivaa >= NESTEN_FULL && !status.klarForTomming) {
     status.klarForTomming = true;
     return true;
   }
 
-  // ---- Er den tommet? ----
-
+  // Tommet?
   if (!status.klarForTomming || status.nivaa != TOM) {
     status.tomFraMs = 0;
     return false;
   }
 
-  // 0 betyr "teller ikke", saa et tilfeldig millis() == 0 blir 1.
+  // 0 betyr "teller ikke", saa millis() == 0 blir 1
   if (status.tomFraMs == 0) {
     status.tomFraMs = naaMs ? naaMs : 1;
     Serial.println("[soppel] Botta ser tom ut. Venter paa at det holder seg.");
@@ -431,7 +302,7 @@ static bool behandle(const Maaling &m, uint32_t naaMs) {
 
   if (naaMs - status.tomFraMs < TOM_STABIL_MS) return false;
 
-  // Tommet. Ansvaret gaar videre.
+  // Tommet, ansvaret gaar videre
   const uint8_t tommet = status.ansvarlig;
   status.ansvarlig = (status.ansvarlig + 1) % ANTALL_BEBOERE;
   status.antallTomminger++;
@@ -448,11 +319,7 @@ static void tilstandTask(void *) {
   Maaling m;
 
   for (;;) {
-    /*
-     * Venter paa neste maaling, men ikke for alltid. Kommer det ingenting
-     * paa tre intervaller, har maaleTask hengt seg - og da skal det staa i
-     * meldingen, ikke bare vaere stille.
-     */
+    // Ingenting paa tre intervaller betyr at maaleTask har hengt seg
     if (xQueueReceive(maaleKo, &m, pdMS_TO_TICKS(3 * MAALEINTERVALL_MS)) != pdTRUE) {
       xSemaphoreTake(statusMutex, portMAX_DELAY);
       strlcpy(status.feil, "maaleTask svarer ikke", sizeof(status.feil));
@@ -465,20 +332,13 @@ static void tilstandTask(void *) {
     const Status kopi = status;
     xSemaphoreGive(statusMutex);
 
-    /*
-     * Skrivingen til flash skjer etter at mutexen er gitt fra seg. Den tar
-     * noen millisekunder, og saa lenge skal ikke nettTask staa og vente paa
-     * aa faa publisere.
-     */
+    // Flash-skriving tar noen ms, saa den gjores etter at mutexen er gitt fra seg
     if (lagre) skrivLager(kopi);
   }
 }
 
-// ===================================================================
-// NETT - nettTask
-// ===================================================================
+// ---- Nett ----
 
-/** Henter en kopi av status. Mutexen holdes bare mens vi kopierer. */
 static Status lesStatus() {
   xSemaphoreTake(statusMutex, portMAX_DELAY);
   const Status s = status;
@@ -495,7 +355,6 @@ static uint32_t oppetidSekunder() {
   return (uint32_t) (esp_timer_get_time() / 1000000LL);
 }
 
-/** Publiserer statusen. */
 static void publiser() {
   const Status s = lesStatus();
   const char *ansvarlig = BEBOERE[s.ansvarlig];
@@ -503,10 +362,7 @@ static void publiser() {
 
   char json[384];
 
-  /*
-   * Uten fersk maaling sendes ok:false, men ansvaret er kjent uansett - det
-   * ligger i flash og ikke i sensoren - saa det sendes med.
-   */
+  // Ansvaret sendes med selv uten fersk maaling
   if (!s.harMaaling || (millis() - s.sisteMaalingMs) > MAKS_ALDER_MS) {
     snprintf(json, sizeof(json),
              "{\"ok\":false,\"feil\":\"%s\",\"ansvarlig\":\"%s\",\"neste\":\"%s\"}",
@@ -515,10 +371,7 @@ static void publiser() {
     return;
   }
 
-  /*
-   * Fyllingsgraden sendes som heltall. Sensoren maaler paa en halv
-   * centimeter naer, og det er over en prosent av botta.
-   */
+  // Fyll som heltall, sensoren er ikke mer noyaktig enn det
   snprintf(json, sizeof(json),
            "{\"ok\":true,\"fyll\":%d,\"nivaa\":\"%s\",\"avstand_cm\":%.1f,"
            "\"ansvarlig\":\"%s\",\"neste\":\"%s\",\"tomminger\":%lu,"
@@ -533,7 +386,6 @@ static void publiser() {
   mqtt.publish(MQTT_EMNE, json);
 }
 
-/** Kobler til brokeren. Feiler det, proeves det igjen etter MQTT_FORSOK_MS. */
 static void kobleTilBroker() {
   Serial.printf("[soppel] Kobler til MQTT-broker %s:%u ...\n", MQTT_BROKER, MQTT_PORT);
 
@@ -563,7 +415,7 @@ static const char *wifiGrunn() {
 
 static void startWifi() {
   WiFi.mode(WIFI_STA);
-  // Hostname maa settes etter mode() og for tilkobling. Se inneklima.ino.
+  // Hostname maa settes etter mode() og for tilkobling
   WiFi.setHostname(VERTSNAVN);
   WiFi.setAutoReconnect(true);
   WiFi.setSleep(false);
@@ -573,13 +425,7 @@ static void startWifi() {
   }
 }
 
-/**
- * Skanner og kobler til det sterkeste av de kjente nettene.
- *
- * wifiMulti.run() blokkerer i noen sekunder (skann + inntil WIFI_KOBLE_MS).
- * Det er greit her: uten nett har nettTask ingenting aa gjore, og de andre
- * taskene gaar videre som foer.
- */
+// Kobler til det sterkeste kjente nettet. Blokkerer noen sekunder.
 static void kobleTil() {
   Serial.printf("[soppel] Leter etter %u kjente nett ...\n", (unsigned) ANTALL_NETT);
 
@@ -593,7 +439,7 @@ static void nettTask(void *) {
   kobleTil();
 
   mqtt.setServer(MQTT_BROKER, MQTT_PORT);
-  // Meldingen er lengre enn PubSubClients standardbuffer paa 256 bytes.
+  // Meldingen er lengre enn standardbufferet paa 256 bytes
   mqtt.setBufferSize(512);
 
   bool varTilkoblet = false;
@@ -609,7 +455,7 @@ static void nettTask(void *) {
       Serial.printf("[soppel] Tilkoblet \"%s\". IP %s, RSSI %d dBm\n",
                     WiFi.SSID().c_str(), WiFi.localIP().toString().c_str(), WiFi.RSSI());
 
-      // Klokka brukes bare til tidspunktet for siste tomming.
+      // Klokka brukes bare til tidspunktet for siste tomming
       configTzTime("CET-1CEST,M3.5.0,M10.5.0/3", "pool.ntp.org");
     }
 
@@ -626,7 +472,6 @@ static void nettTask(void *) {
     }
 
     if (mqtt.connected()) {
-      // loop() holder forbindelsen i live med ping mot brokeren.
       mqtt.loop();
 
       if (naa - sistPublisert >= PUBLISERINGSINTERVALL_MS) {
@@ -635,29 +480,18 @@ static void nettTask(void *) {
       }
     }
 
-    /*
-     * Nettet under setAutoReconnect(): den prover bare nettet vi var paa.
-     * Gir den opp, skanner vi paa nytt blant ALLE kjente nett - saa ESP-en
-     * finner hotspoten naar hjemmenettet er borte, og omvendt.
-     */
+    // setAutoReconnect() prover bare samme nett. Gir den opp, skannes alle
+    // kjente nett paa nytt, saa ESP-en kan bytte mellom hjem og hotspot.
     if (!tilkoblet && (naa - forsoktFra) > WIFI_FORSOK_MS) {
       WiFi.disconnect();
       kobleTil();
       forsoktFra = millis();
     }
 
-    /*
-     * Gir fra seg CPU-en. Uten denne spinner tasken paa 100 % og sulter
-     * alt med samme eller lavere prioritet - blant annet idle-tasken, og da
-     * slaar watchdogen til.
-     */
+    // Uten denne sulter idle-tasken og watchdogen slaar til
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
-
-// ===================================================================
-// OPPSTART
-// ===================================================================
 
 void setup() {
   Serial.begin(115200);
@@ -671,19 +505,13 @@ void setup() {
 
   lesLager();
 
-  /*
-   * Alle tre paa kjerne 1. Kjerne 0 er Wi-Fi-stakkens, og vi lar den vaere
-   * i fred. Stakkstoerrelsene er i bytes (ESP-IDF-varianten av FreeRTOS).
-   */
+  // Alle paa kjerne 1, kjerne 0 er Wi-Fi sin. Stakk i bytes.
   xTaskCreatePinnedToCore(maaleTask, "maale", 3072, nullptr, 3, nullptr, 1);
   xTaskCreatePinnedToCore(tilstandTask, "tilstand", 4096, nullptr, 2, nullptr, 1);
   xTaskCreatePinnedToCore(nettTask, "nett", 8192, nullptr, 1, nullptr, 1);
 }
 
-/*
- * loop() er selv en FreeRTOS-task i Arduino-kjernen. Den har ingenting aa
- * gjore her - alt arbeid er i taskene over - saa den sletter seg selv.
- */
+// Alt skjer i taskene, saa loop-tasken sletter seg selv
 void loop() {
   vTaskDelete(nullptr);
 }

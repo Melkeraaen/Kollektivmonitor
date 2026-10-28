@@ -1,49 +1,25 @@
 /* inneklima - ESP32-S3 med AHT20
  *
- * Publiserer innetemperatur og luftfuktighet som JSON over MQTT, paa emnet
- * kollektivmonitor/inneklima. server.js paa Pi-en abonnerer og vurderer
- * temperaturen.
+ * Publiserer innetemperatur og luftfuktighet som JSON paa
+ * kollektivmonitor/inneklima. server.js paa Pi-en vurderer temperaturen.
  *
- * Brokeren (Mosquitto) kjorer paa samme maskin som skjermen. Adressen
- * staar i wifi_secrets.h, saa flytting fra Mac til Pi betyr ny opplasting.
+ * Board:     "UM FeatherS3" (esp32:esp32:um_feathers3). Med "Adafruit
+ *            Feather ESP32-S3" blir I2C-pinnene feil, og den melder
+ *            "fant ingen sensor".
+ * Sensor:    AHT20 paa I2C
+ * Bibliotek: Adafruit AHTX0 (med Unified Sensor og BusIO) og PubSubClient
  *
- * Maskinvare:  UM FeatherS3 (Unexpected Maker), 16 MB flash.
- * Board:       "UM FeatherS3" i esp32-kjernen fra Espressif
- *              (esp32:esp32:um_feathers3). Med "Adafruit Feather ESP32-S3"
- *              kompilerer og kjorer den, men faar feil I2C-pinner og
- *              melder "fant ingen sensor".
- * Sensor:      AHT20 paa I2C. Wire.begin() uten argumenter tar pinnene
- *              boardvalget sier, saa det er boardvalget som maa vaere
- *              riktig.
- * Bibliotek:   Adafruit AHTX0 (2.0.6) med Adafruit Unified Sensor + BusIO,
- *              og PubSubClient (Nick O'Leary) for MQTT
- *
- * FreeRTOS - TO TASKS OG EN MUTEX, samme oppbygning som esp/soppel/:
- *
- *   sensorTask  prio 2   Leser AHT20 hvert 10. sekund og skriver siste
- *                        maaling til den delte tilstanden.
- *   nettTask    prio 1   Wi-Fi og MQTT. Publiserer hvert 10. sekund.
- *
- *   Mutexen beskytter maalingen, som sensorTask skriver og nettTask leser
- *   naar den publiserer. Uten den kunne en melding faatt temperaturen fra
- *   en maaling og fuktigheten fra den neste.
+ * Tasks, samme oppbygning som esp/soppel/:
+ *   sensorTask  prio 2  leser AHT20 hvert 10. sekund
+ *   nettTask    prio 1  Wi-Fi og MQTT, publiserer hvert 10. sekund
+ *   maalingMutex gjor at temperatur og fuktighet i en melding er fra
+ *   samme maaling.
  *
  * Meldingen:
  *   {"ok":true,"temperatur":21.4,"fuktighet":38.2,"alder_s":3,...}
- *   {"ok":false,"feil":"..."} naar det ikke finnes en gyldig maaling.
+ *   {"ok":false,"feil":"..."}
  *
- * Se paa meldingene fra en maskin paa nettet:
- *   mosquitto_sub -h <broker> -t kollektivmonitor/inneklima -v
- *
- * Wi-Fi-nettene, brokeren og MQTT-brukeren ligger i wifi_secrets.h i samme
- * mappe, som IKKE er i Git.
- * Kopier wifi_secrets.example.h til wifi_secrets.h og fyll inn. Mangler
- * fila, stopper kompileringen paa #include-linja under - med vilje.
- *
- * De laa en periode rett i denne fila med plassholdere i Git. Det er byttet
- * tilbake til en egen fil fordi det naa er flere nett (hjem og hotspot), og
- * fordi et ekte passord i en fil som er i Git ligger i historikken for
- * alltid saa snart noen committer den ved et uhell.
+ * Kopier wifi_secrets.example.h til wifi_secrets.h og fyll inn.
  */
 
 #include <WiFi.h>
@@ -54,51 +30,27 @@
 
 #include "wifi_secrets.h"
 
-/*
- * Nettene (WIFI_NETT) staar i wifi_secrets.h.
- *
- * MERK: ESP32-S3 har ingen 5 GHz-radio. Nettene maa vaere 2,4 GHz. Er et
- * nett ikke det, finner ESP-en det ikke i det hele tatt - og loggen sier da
- * "finner ikke nettet", ikke "feil passord".
- */
+// ESP32-S3 ser bare 2,4 GHz-nett
 static const size_t ANTALL_NETT = sizeof(WIFI_NETT) / sizeof(WIFI_NETT[0]);
 
-// DHCP-hostname, og klient-ID mot MQTT-brokeren.
+// Brukes som hostname og MQTT-klient-ID
 static const char *VERTSNAVN = "inneklima";
 
 static const char *MQTT_EMNE = "kollektivmonitor/inneklima";
 
-// Hvor ofte maalingen publiseres. Samme takt som sensoren leses.
 static const uint32_t PUBLISERINGSINTERVALL_MS = 10000;
-
-// Hvor lenge vi venter mellom forsoek paa aa koble til brokeren.
 static const uint32_t MQTT_FORSOK_MS = 5000;
 
-/*
- * Kalibrering mot selvoppvarming, i grader.
- *
- * ESP32-S3 med Wi-Fi paa varmer seg selv, og sitter sensoren tett paa
- * brettet leser den for hoyt. Mal mot et termometer du stoler paa og legg
- * inn differansen her - staar det 22,8 paa ESP-en og 21,4 paa termometeret,
- * er TEMP_OFFSET -1.4.
- *
- * Standarden er 0.0 med vilje: en ukalibrert avlesning skal vaere raa, ikke
- * korrigert med et tall noen har gjettet. Den beste kalibreringen er
- * uansett aa flytte sensoren bort fra brettet paa en kabelstubb.
- */
+// Korrigering for at brettet varmer sensoren. Maal mot et termometer:
+// 22,8 paa ESP-en og 21,4 paa termometeret gir -1.4. Ukalibrert = 0.
 static const float TEMP_OFFSET = 0.0;
 
-// Hvor ofte sensoren leses. Inneklima endrer seg langsomt; 10 s er rikelig.
 static const uint32_t MAALEINTERVALL_MS = 10000;
 
-/*
- * Hvor lenge vi venter paa Wi-Fi for vi konkluderer med at forsoket er dodt
- * og starter et nytt. setAutoReconnect() tar de vanlige bruddene, men den
- * gir opp hvis ruteren er borte lenge nok - dette er nettet under den.
- */
+// Hvor lenge vi venter paa Wi-Fi for vi prover paa nytt
 static const uint32_t WIFI_FORSOK_MS = 20000;
 
-// Hvor lenge wifiMulti.run() venter paa at det valgte nettet svarer.
+// Hvor lenge wifiMulti.run() venter paa nettet
 static const uint32_t WIFI_KOBLE_MS = 10000;
 
 static Adafruit_AHTX0 aht;
@@ -106,13 +58,7 @@ static WiFiMulti wifiMulti;
 static WiFiClient wifiKlient;
 static PubSubClient mqtt(wifiKlient);
 
-/*
- * Siste gyldige maaling. Den blir staaende til en ny kommer inn.
- *
- * sensorTask skriver, nettTask leser, og begge gjor det bare med
- * maalingMutex tatt. feil er en char-tabell og ikke String, saa en kopi av
- * hele structen er en ren minnekopi uten heap.
- */
+// Siste gyldige maaling. Brukes bare med maalingMutex tatt.
 struct Maaling {
   bool harMaaling;
   float temp;
@@ -124,22 +70,15 @@ struct Maaling {
 static Maaling maaling = { false, 0.0f, 0.0f, 0, "ingen maaling ennaa" };
 static SemaphoreHandle_t maalingMutex;
 
-// Brukes bare av sensorTask og nettTask hver for seg - ingen mutex.
+// Brukes bare av en task hver, saa ingen mutex
 static bool sensorKlar = false;
 static uint32_t wifiForsoktFra = 0;
 
-/**
- * Alderen paa siste maaling i hele sekunder.
- *
- * Differansen regnes i unsigned aritmetikk, saa den er riktig ogsaa naar
- * millis() ruller rundt etter 49 dogn.
- */
 static uint32_t alderSekunder(const Maaling &m) {
   if (!m.harMaaling) return 0;
   return (uint32_t) ((millis() - m.maaltMs) / 1000UL);
 }
 
-/** Henter en kopi av maalingen. Mutexen holdes bare mens vi kopierer. */
 static Maaling lesMaaling() {
   xSemaphoreTake(maalingMutex, portMAX_DELAY);
   const Maaling m = maaling;
@@ -147,26 +86,19 @@ static Maaling lesMaaling() {
   return m;
 }
 
-/** Setter feilteksten. Forrige gyldige maaling blir staaende. */
+// Forrige gyldige maaling blir staaende
 static void settFeil(const char *tekst) {
   xSemaphoreTake(maalingMutex, portMAX_DELAY);
   strlcpy(maaling.feil, tekst, sizeof(maaling.feil));
   xSemaphoreGive(maalingMutex);
 }
 
-/**
- * Oppetid i sekunder.
- *
- * esp_timer_get_time() gir mikrosekunder siden oppstart som int64, saa
- * tallet fortsetter aa stemme forbi de 49 dognene der millis() ruller rundt.
- */
 static uint32_t oppetidSekunder() {
   return (uint32_t) (esp_timer_get_time() / 1000000LL);
 }
 
-/** Starter I2C og sensoren. Kalles paa nytt fra loop() hvis den feiler. */
 static bool startSensor() {
-  // Uten argumenter tar Wire brettets egne pinner - SDA=8, SCL=9 paa FeatherS3.
+  // Brettets egne pinner, SDA=8 og SCL=9 paa FeatherS3
   Wire.begin();
 
   if (!aht.begin()) {
@@ -179,7 +111,6 @@ static bool startSensor() {
   return true;
 }
 
-/** Leser sensoren og oppdaterer siste gyldige maaling. */
 static void lesSensor() {
   sensors_event_t fukt, temp;
 
@@ -190,11 +121,7 @@ static void lesSensor() {
     return;
   }
 
-  /*
-   * En AHT20 som har mistet kontakten leverer gjerne 0,0 eller NaN i stedet
-   * for aa feile. Det slippes ikke gjennom: en tom plass paa skjermen er
-   * aerligere enn "Inne 0,0 grader".
-   */
+  // En AHT20 som har mistet kontakten kan gi NaN i stedet for aa feile
   if (isnan(temp.temperature) || isnan(fukt.relative_humidity)) {
     Serial.println("[inneklima] Avlesningen var NaN.");
     settFeil("avlesningen var NaN");
@@ -215,7 +142,6 @@ static void lesSensor() {
   Serial.printf("[inneklima] %.1f C, %.1f %%\n", t, f);
 }
 
-/** Publiserer siste maaling, eller feilen naar det ikke finnes en. */
 static void publiser() {
   const Maaling m = lesMaaling();
   char json[192];
@@ -227,15 +153,8 @@ static void publiser() {
     return;
   }
 
-  /*
-   * En gammel maaling er ogsaa en feil, men det er server.js som eier den
-   * grensen (maxAlderMin i config.json). ESP-en oppgir alderen og lar
-   * klienten bestemme - da kan grensen endres uten aa flashe paa nytt.
-   *
-   * %.1f og ikke %.2f: AHT20 oppgir selv ca. 0,01 i opplosning, men
-   * noyaktigheten er +/- 0,3 grader og +/- 2 % RF. Flere desimaler ville
-   * vaert presisjon vi ikke har.
-   */
+  // Alderen sendes med, og server.js avgjor om maalingen er for gammel.
+  // En desimal holder, sensoren er noyaktig til +/- 0,3 grader og 2 % RF.
   snprintf(json, sizeof(json),
            "{\"ok\":true,\"temperatur\":%.1f,\"fuktighet\":%.1f,"
            "\"alder_s\":%lu,\"uptime_s\":%lu,\"rssi\":%d}",
@@ -247,10 +166,6 @@ static void publiser() {
   mqtt.publish(MQTT_EMNE, json);
 }
 
-/**
- * Kobler til brokeren. Feiler det, proeves det igjen etter MQTT_FORSOK_MS -
- * maalingene gaar videre i sensorTask saa lenge.
- */
 static void kobleTilBroker() {
   Serial.printf("[inneklima] Kobler til MQTT-broker %s:%u ...\n", MQTT_BROKER, MQTT_PORT);
 
@@ -262,14 +177,6 @@ static void kobleTilBroker() {
   }
 }
 
-/**
- * Oversetter WiFi.status() til en grunn et menneske kan handle paa.
- *
- * Uten dette sier loggen bare "gir opp og starter et nytt" om og om igjen,
- * og de to vanligste feilene ser helt like ut derfra: nettet finnes ikke
- * (feil SSID, eller 5 GHz-nett som ESP32-S3 ikke ser), og passordet er
- * feil. Det er to helt forskjellige ting aa rette.
- */
 static const char *wifiGrunn() {
   switch (WiFi.status()) {
     case WL_NO_SSID_AVAIL:
@@ -286,23 +193,8 @@ static const char *wifiGrunn() {
   }
 }
 
-/**
- * Lister nettene ESP-en faktisk ser, og sier om vaart er blant dem.
- *
- * Dette er den ene proven som avgjor saken naar en ESP ikke vil koble seg
- * paa. Staar nettet i lista, er navnet riktig og radioen naar det - da er
- * det passordet. Staar det IKKE i lista, hjelper det ikke aa skrive
- * passordet om igjen: da er nettet enten utenfor rekkevidde, eller saa er
- * det 5 GHz, som denne brikken ikke har radio for i det hele tatt.
- *
- * Det siste er den vanligste fellen med telefon-hotspot. En iPhone deler
- * som standard paa 5 GHz, og maa settes i "Maksimer kompatibilitet" for aa
- * gaa ned paa 2,4 GHz. Uten den staar nettet fullt synlig paa telefonen og
- * er likevel usynlig for ESP-en.
- *
- * Skanningen blokkerer i et par sekunder. Det er greit her: den kjorer bare
- * naar vi allerede har staatt fast i WIFI_FORSOK_MS.
- */
+// Lister nettene ESP-en ser. Er vaart nett med, er det passordet som er feil.
+// Er det ikke med, er det feil navn, utenfor rekkevidde eller 5 GHz.
 static void skannNett() {
   Serial.println("[inneklima] Skanner etter nett ...");
 
@@ -340,27 +232,19 @@ static void skannNett() {
                    "kompatibilitet\".");
   }
 
-  /*
-   * Resultatlista ligger i minnet til den slettes. Uten dette lekker vi
-   * noen kilobyte for hver skanning, og en ESP som staar og feiler i et
-   * dogn ville skannet 4000 ganger.
-   */
+  // Frigjor resultatlista, ellers lekker hver skanning minne
   WiFi.scanDelete();
 }
 
-/** Setter opp Wi-Fi og legger inn nettene. Kobler ikke til - se kobleTil(). */
 static void startWifi() {
   WiFi.mode(WIFI_STA);
 
-  /*
-   * Rekkefolgen er ikke likegyldig: hostname maa settes etter at modusen er
-   * satt og FOR tilkoblingen, ellers er DHCP-forespoerselen allerede sendt
-   * med kjernens standardnavn ("espressif").
-   */
+  // Hostname maa settes etter mode() og for tilkobling, ellers sendes
+  // DHCP-forespoerselen med standardnavnet
   WiFi.setHostname(VERTSNAVN);
   WiFi.setAutoReconnect(true);
 
-  // Sparemodus gir lange pauser i radioen, og da faller MQTT-forbindelsen ut.
+  // Med sparemodus faller MQTT-forbindelsen ut
   WiFi.setSleep(false);
 
   for (size_t i = 0; i < ANTALL_NETT; i++) {
@@ -368,13 +252,7 @@ static void startWifi() {
   }
 }
 
-/**
- * Skanner og kobler til det sterkeste av de kjente nettene.
- *
- * wifiMulti.run() blokkerer i noen sekunder (skann + inntil WIFI_KOBLE_MS).
- * Det er greit her: uten nett har nettTask ingenting aa gjore, og
- * sensorTask gaar videre som foer.
- */
+// Kobler til det sterkeste kjente nettet. Blokkerer noen sekunder.
 static void kobleTil() {
   Serial.printf("[inneklima] Leter etter %u kjente nett ...\n", (unsigned) ANTALL_NETT);
 
@@ -385,20 +263,14 @@ static void kobleTil() {
   wifiForsoktFra = millis();
 }
 
-/**
- * sensorTask - leser AHT20 hvert MAALEINTERVALL_MS.
- *
- * Wire og sensoren brukes bare herfra, saa I2C-bussen trenger ingen egen
- * mutex. Legges det til en task til som snakker I2C, trenger den det.
- */
+// Bare denne tasken bruker I2C, saa bussen trenger ingen mutex
 static void sensorTask(void *) {
   sensorKlar = startSensor();
 
-  // Fast takt fra start til start, uansett hvor lang tid avlesningen tok.
   TickType_t neste = xTaskGetTickCount();
 
   for (;;) {
-    // Falt sensoren ut, prov aa faa den opp igjen for vi leser.
+    // Prov aa starte sensoren igjen hvis den har falt ut
     if (!sensorKlar) sensorKlar = startSensor();
 
     if (sensorKlar) lesSensor();
@@ -407,7 +279,6 @@ static void sensorTask(void *) {
   }
 }
 
-/** nettTask - Wi-Fi og MQTT. */
 static void nettTask(void *) {
   startWifi();
   kobleTil();
@@ -434,7 +305,6 @@ static void nettTask(void *) {
     }
 
     if (mqtt.connected()) {
-      // loop() holder forbindelsen i live med ping mot brokeren.
       mqtt.loop();
 
       if (naa - sistPublisert >= PUBLISERINGSINTERVALL_MS) {
@@ -450,20 +320,12 @@ static void nettTask(void *) {
 
     varTilkoblet = tilkoblet;
 
-    /*
-     * setAutoReconnect() tar de korte bruddene selv, men bare mot nettet vi
-     * var paa. Dette er nettet under den: har det gaatt lenge nok uten at vi
-     * kom oss paa, skannes det paa nytt blant ALLE kjente nett - saa ESP-en
-     * finner hotspoten naar hjemmenettet er borte, og omvendt.
-     */
+    // setAutoReconnect() prover bare samme nett. Gir den opp, skannes alle
+    // kjente nett paa nytt, saa ESP-en kan bytte mellom hjem og hotspot.
     if (!tilkoblet && (naa - wifiForsoktFra) > WIFI_FORSOK_MS) {
       Serial.printf("[inneklima] Ikke tilkoblet: %s.\n", wifiGrunn());
 
-      /*
-       * Skann bare paa det forste mislykkede forsoeket. Etter det er svaret
-       * det samme hver gang, og en full liste hvert 20. sekund gjor
-       * seriemonitoren ulesbar akkurat naar man trenger aa lese den.
-       */
+      // Skann bare forste gang, ellers fylles seriemonitoren opp
       if (!harSkannet) {
         harSkannet = true;
         skannNett();
@@ -473,10 +335,7 @@ static void nettTask(void *) {
       kobleTil();
     }
 
-    /*
-     * Gir fra seg CPU-en. Uten denne spinner tasken paa 100 % og sulter
-     * idle-tasken, og da slaar watchdogen til.
-     */
+    // Uten denne sulter idle-tasken og watchdogen slaar til
     vTaskDelay(pdMS_TO_TICKS(5));
   }
 }
@@ -484,11 +343,7 @@ static void nettTask(void *) {
 void setup() {
   Serial.begin(115200);
 
-  /*
-   * ESP32-S3 har USB-CDC som seriell port, og den er ikke oppe med en gang
-   * etter reset. Uten en liten pause forsvinner de forste linjene - blant
-   * annet IP-adressen, som er akkurat den man sitter og venter paa.
-   */
+  // USB-serieporten paa S3 trenger litt tid, ellers forsvinner de forste linjene
   delay(1500);
 
   Serial.println();
@@ -496,15 +351,12 @@ void setup() {
 
   maalingMutex = xSemaphoreCreateMutex();
 
-  // Begge paa kjerne 1. Kjerne 0 er Wi-Fi-stakkens, og den lar vi vaere i fred.
+  // Begge paa kjerne 1, kjerne 0 er Wi-Fi sin
   xTaskCreatePinnedToCore(sensorTask, "sensor", 4096, nullptr, 2, nullptr, 1);
   xTaskCreatePinnedToCore(nettTask, "nett", 8192, nullptr, 1, nullptr, 1);
 }
 
-/*
- * loop() er selv en FreeRTOS-task i Arduino-kjernen. Alt arbeid er i
- * taskene over, saa den sletter seg selv.
- */
+// Alt skjer i taskene, saa loop-tasken sletter seg selv
 void loop() {
   vTaskDelete(nullptr);
 }
