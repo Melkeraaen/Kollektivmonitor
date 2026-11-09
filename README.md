@@ -1,4 +1,10 @@
-# KollektivMonitor – skjerm
+# KollektivMonitor – demoversjonen
+
+Versjonen til demo på skolen. Raspberry Pi 5 er selv Wi-Fi-tilgangspunkt
+(`PresenceLab`, 10.42.0.1), ESP-ene og telefonene kobler seg til det, og
+`hjemme.sh` leser hvilke telefoner som er tilkoblet tilgangspunktet. Mosquitto krever
+innlogging. Versjonen som skanner hjemmenettet ligger på `main`.
+Koden ellers er den samme.
 
 Skjermdelen av KollektivMonitor (TTK8). En Raspberry Pi viser tre ting:
 

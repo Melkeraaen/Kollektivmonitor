@@ -9,7 +9,7 @@
 #pragma once
 
 static const char *WIFI_NETT[][2] = {
-  { "PresenceLab", "geir" },
+  { "PresenceLab", "passordet-til-hotspoten" },
 };
 
 // Mosquitto paa Pi 5, som selv er hotspot. IP og ikke .local, siden
