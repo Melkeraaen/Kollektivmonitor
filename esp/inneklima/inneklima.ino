@@ -47,6 +47,9 @@ static const float TEMP_OFFSET = 0.0;
 
 static const uint32_t MAALEINTERVALL_MS = 10000;
 
+// Eldre maaling enn dette sendes som ok:false med feilen, som i esp/soppel/
+static const uint32_t MAKS_ALDER_MS = 30000;
+
 // Hvor lenge vi venter paa Wi-Fi for vi prover paa nytt
 static const uint32_t WIFI_FORSOK_MS = 20000;
 
@@ -146,14 +149,14 @@ static void publiser() {
   const Maaling m = lesMaaling();
   char json[192];
 
-  if (!m.harMaaling) {
+  if (!m.harMaaling || (millis() - m.maaltMs) > MAKS_ALDER_MS) {
     snprintf(json, sizeof(json), "{\"ok\":false,\"feil\":\"%s\"}",
              m.feil[0] ? m.feil : "ingen maaling ennaa");
     mqtt.publish(MQTT_EMNE, json);
     return;
   }
 
-  // Alderen sendes med, og server.js avgjor om maalingen er for gammel.
+  // Alderen sendes med, saa server.js ogsaa kan se hvor fersk maalingen er.
   // En desimal holder, sensoren er noyaktig til +/- 0,3 grader og 2 % RF.
   snprintf(json, sizeof(json),
            "{\"ok\":true,\"temperatur\":%.1f,\"fuktighet\":%.1f,"
@@ -169,11 +172,11 @@ static void publiser() {
 static void kobleTilBroker() {
   Serial.printf("[inneklima] Kobler til MQTT-broker %s:%u ...\n", MQTT_BROKER, MQTT_PORT);
 
-  if (mqtt.connect(VERTSNAVN, MQTT_BRUKER, MQTT_PASSORD)) {
+  if (mqtt.connect(VERTSNAVN)) {
     Serial.println("[inneklima] Koblet til brokeren.");
   } else {
     Serial.printf("[inneklima] Brokeren svarte ikke (state %d). Kjorer Mosquitto, "
-                  "og stemmer adressen, brukeren og passordet i wifi_secrets.h?\n", mqtt.state());
+                  "og stemmer adressen i wifi_secrets.h?\n", mqtt.state());
   }
 }
 

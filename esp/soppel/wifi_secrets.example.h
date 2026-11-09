@@ -9,12 +9,11 @@
 #pragma once
 
 static const char *WIFI_NETT[][2] = {
-  { "PresenceLab", "geir" },
+  { "hjemmenettet", "passordet-hjemme" },
+  { "iPhone-hotspot", "passordet-paa-hotspot" },
 };
 
-// Mosquitto paa Pi 5, som selv er hotspot. IP og ikke .local, siden
-// PubSubClient ikke slaar opp mDNS-navn.
-static const char *MQTT_BROKER = "10.42.0.1";
+// Mosquitto paa Pi-en hjemme. IP og ikke .local, siden PubSubClient ikke
+// slaar opp mDNS-navn. Reserver adressen i ruteren.
+static const char *MQTT_BROKER = "192.168.68.XXX";
 static const uint16_t MQTT_PORT = 1883;
-static const char *MQTT_BRUKER = "kollektivmonitor";
-static const char *MQTT_PASSORD = "passordet-til-mqtt-brukeren";

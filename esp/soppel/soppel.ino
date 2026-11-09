@@ -389,11 +389,11 @@ static void publiser() {
 static void kobleTilBroker() {
   Serial.printf("[soppel] Kobler til MQTT-broker %s:%u ...\n", MQTT_BROKER, MQTT_PORT);
 
-  if (mqtt.connect(VERTSNAVN, MQTT_BRUKER, MQTT_PASSORD)) {
+  if (mqtt.connect(VERTSNAVN)) {
     Serial.println("[soppel] Koblet til brokeren.");
   } else {
     Serial.printf("[soppel] Brokeren svarte ikke (state %d). Kjorer Mosquitto, "
-                  "og stemmer adressen, brukeren og passordet i wifi_secrets.h?\n", mqtt.state());
+                  "og stemmer adressen i wifi_secrets.h?\n", mqtt.state());
   }
 }
 
