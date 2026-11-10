@@ -45,7 +45,13 @@ li {
 	margin-bottom: 8px;
 }
 
-/* Farge brukes bare når noe må gjøres. Grått betyr borte, utdatert eller feil. */
+/* De som er hjemme lyser grønt. */
+.hjemme {
+	color: #3dd68c;
+	text-shadow: 0 0 18px rgba(61, 214, 140, 0.45);
+}
+
+/* Ellers brukes farge bare når noe må gjøres. Grått betyr borte, utdatert eller feil. */
 .borte,
 .utdatert,
 .feil {

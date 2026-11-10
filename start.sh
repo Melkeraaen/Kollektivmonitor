@@ -24,5 +24,6 @@ if [ "$(uname)" = "Darwin" ]; then
 else
 	# Heter chromium på nyere Raspberry Pi OS og chromium-browser på eldre.
 	CHROMIUM=$(command -v chromium || command -v chromium-browser)
-	"$CHROMIUM" --kiosk --noerrdialogs --disable-infobars --incognito "http://localhost:$PORT"
+	# --password-store=basic: ellers ber Chromium om å låse opp nøkkelringen, og dialogen dekker skjermen.
+	"$CHROMIUM" --kiosk --noerrdialogs --disable-infobars --incognito --password-store=basic "http://localhost:$PORT"
 fi

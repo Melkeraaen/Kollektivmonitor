@@ -63,7 +63,7 @@ static const float HYSTERESE = 3.0;
 
 // Botta maa ha vaert tom saa lenge for det telles som tomming, saa en haand
 // i aapningen ikke teller.
-static const uint32_t TOM_STABIL_MS = 60000;
+static const uint32_t TOM_STABIL_MS = 20000;
 
 // Rekkefolgen ansvaret gaar i. Ansvaret lagres som plass i lista, saa
 // endres lista, flytter ansvaret seg.
@@ -263,7 +263,7 @@ static time_t naaUnix() {
 static bool behandle(const Maaling &m, uint32_t naaMs) {
   if (!m.gyldig) {
     // Gamle verdier blir staaende, saa et aapent lokk ikke ser ut som tom botte
-    strlcpy(status.feil, "ingen gyldig maaling - lokket aapent?", sizeof(status.feil));
+    strlcpy(status.feil, "ingen gyldig måling - lokket åpent?", sizeof(status.feil));
     return false;
   }
 
