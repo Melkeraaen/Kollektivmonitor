@@ -72,7 +72,7 @@ int main() {
     sjekk("E3", "Ingen blafring rundt en grense", bytter == 0, d);
   }
 
-  // E4 Normal tomming: full, saa tom i 60 s. Ansvaret gaar videre en gang.
+  // E4 Normal tomming: full, saa tom i 20 s. Ansvaret gaar videre en gang.
   {
     nullstill(); lesLager();
     uint32_t t = 1000;
@@ -83,19 +83,19 @@ int main() {
     for (int i = 0; i < 40; i++) { steg(3, t += 2000); if (!bytteVed && status.ansvarlig != foer) bytteVed = t; }
     snprintf(d, sizeof d, "klar etter fylling=%d, ansvar %s -> %s, byttet %.0f s etter foerste tomme maaling, tomminger=%u",
              klar, BEBOERE[foer], BEBOERE[status.ansvarlig], bytteVed ? (bytteVed - tomStart) / 1000.0 : -1.0, (unsigned) status.antallTomminger);
-    sjekk("E4", "Tomming etter 60 s stabilt tom", klar && status.ansvarlig == 1 && status.antallTomminger == 1 &&
+    sjekk("E4", "Tomming etter 20 s stabilt tom", klar && status.ansvarlig == 1 && status.antallTomminger == 1 &&
           bytteVed - tomStart >= TOM_STABIL_MS && bytteVed - tomStart <= TOM_STABIL_MS + 2000, d);
   }
 
-  // E5 Kort tom periode (haand i aapningen, pose loeftet ut i 20 s) teller ikke
+  // E5 Kort tom periode (haand i aapningen, pose loeftet ut i 10 s) teller ikke
   {
     nullstill(); lesLager();
     uint32_t t = 1000;
     steg(50, t += 2000); steg(80, t += 2000); steg(95, t += 2000);
-    for (int i = 0; i < 10; i++) steg(5, t += 2000);   // 20 s tom
+    for (int i = 0; i < 5; i++) steg(5, t += 2000);    // 10 s tom
     for (int i = 0; i < 5; i++) steg(60, t += 2000);   // tilbake
     snprintf(d, sizeof d, "ansvar=%s, tomminger=%u, klar=%d", BEBOERE[status.ansvarlig], (unsigned) status.antallTomminger, status.klarForTomming);
-    sjekk("E5", "20 s tom bøtte teller ikke som tømming", status.ansvarlig == 0 && status.antallTomminger == 0 && status.klarForTomming, d);
+    sjekk("E5", "10 s tom bøtte teller ikke som tømming", status.ansvarlig == 0 && status.antallTomminger == 0 && status.klarForTomming, d);
   }
 
   // E6 Tom bøtte uten at den har vært nesten full teller ikke

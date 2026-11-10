@@ -8,6 +8,7 @@ function norsk(tall, desimaler) {
 }
 
 // Den ansvarlige regnes bare som borte når skanningen faktisk sier det.
+
 // Da foreslås noen som er hjemme, med neste i rekka først.
 function finnVikar(ansvarlig, neste, hjemme) {
 	if (!ansvarlig || !hjemme) return { borte: false, vikar: null };
@@ -54,9 +55,9 @@ function visSoppel(soppel, hjemme) {
 
 	let tekst = "";
 	if (harFyll && navn && (soppel.nivaa === "full" || soppel.nivaa === "nesten_full")) {
-		if (vikar) tekst = `${vikar} kan ta den`;
-		else if (soppel.nivaa === "full") tekst = `${navn} må tømme nå`;
-		else tekst = `${navn} tømmer snart`;
+		if (vikar) tekst = `${vikar} er hjemme og kan ta den`;
+		else if (soppel.nivaa === "full") tekst = `${navn}, nå må søpla ut`;
+		else tekst = `${navn} bør ta søpla snart`;
 	}
 	melding.textContent = tekst;
 	melding.className = harFyll ? `melding ${soppel.nivaa}` : "melding";
@@ -65,7 +66,7 @@ function visSoppel(soppel, hjemme) {
 const anbefalinger = {
 	opp: { tekst: "Skru opp varmen", klasse: "kald" },
 	ned: { tekst: "Skru ned varmen", klasse: "varm" },
-	uendret: { tekst: "La varmen stå", klasse: "" }
+	uendret: { tekst: "", klasse: "" }
 };
 
 function visInneklima(inneklima) {
@@ -86,6 +87,7 @@ function visInneklima(inneklima) {
 	const anbefaling = anbefalinger[inneklima.anbefaling];
 	temperatur.textContent = `${norsk(inneklima.temperatur, 1)}°`;
 	temperatur.className = `stor ${anbefaling.klasse}`;
+
 	// AHT20 måler fuktighet med ±2 %, så desimaler gir ingen mening.
 	fuktighet.textContent = `${Math.round(inneklima.fuktighet)} % fuktighet`;
 	melding.textContent = anbefaling.tekst;
@@ -101,7 +103,7 @@ function visHjemme(hjemme) {
 		return;
 	}
 	for (const person of hjemme) {
-		liste.append(lagPunkt(person.navn, person.hjemme ? "" : "borte"));
+		liste.append(lagPunkt(person.navn, person.hjemme ? "hjemme" : "borte"));
 	}
 }
 

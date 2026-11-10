@@ -80,7 +80,7 @@ async function main() {
 			s.soppel.fyll === 82 && s.soppel.nivaa === "nesten_full" && s.soppel.ansvarlig === "Henrik" && s.soppel.feil === null);
 
 		// P3 Sensorfeil fra ESP32
-		await send("soppel", { ok: false, feil: "ingen gyldig maaling - lokket aapent?", ansvarlig: "Henrik", neste: "Sigurd" });
+		await send("soppel", { ok: false, feil: "ingen gyldig måling - lokket åpent?", ansvarlig: "Henrik", neste: "Sigurd" });
 		s = await status();
 		sjekk("P3", "ok:false fra ESP32 (lokket åpent)", "fyll null, ansvar Henrik vises fortsatt, «Sensorfeil: ...»",
 			`fyll=${s.soppel.fyll}, ansvar=${s.soppel.ansvarlig}, ${s.soppel.feil}`,
