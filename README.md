@@ -1,102 +1,59 @@
 # KollektivMonitor – demoversjonen
 
-Versjonen til demo på skolen. Raspberry Pi 5 er selv Wi-Fi-tilgangspunkt
-(`PresenceLab`, 10.42.0.1), ESP-ene og telefonene kobler seg til det, og
-`hjemme.sh` leser hvilke telefoner som er tilkoblet tilgangspunktet. Mosquitto krever
-innlogging. Versjonen som skanner hjemmenettet ligger på `main`.
-Koden ellers er den samme.
+Skjerm for kollektivet (TTK8). En Raspberry Pi viser:
 
-Skjermdelen av KollektivMonitor (TTK8). En Raspberry Pi viser tre ting:
+- **Søppel:** hvor full bøtta er og hvem som skal tømme den (`esp/soppel/`).
+- **Inne:** temperatur og luftfuktighet (`esp/inneklima/`).
+- **Hjemme:** hvem som er hjemme, ut fra telefonenes MAC-adresse (`hjemme.sh`).
 
-- **Søppel:** fyllingsgrad og hvem som har tømmeansvaret, fra ESP-en i `esp/soppel/`.
-  Er den ansvarlige borte, blir navnet grått og noen som er hjemme foreslås.
-- **Inne:** temperatur og luftfuktighet, fra ESP-en i `esp/inneklima/`.
-- **Hjemme:** hvem som er på nettverket, ut fra MAC-adressen til telefonene (`hjemme.sh`).
+ESP-ene sender JSON over MQTT til Mosquitto på Pi-en. `server.js` tar imot og
+gir skjermen (`index.html`, `app.js`, `style.css`) dataene på `/api/status`.
 
-ESP-ene publiserer status som JSON over MQTT (`kollektivmonitor/soppel` og
-`kollektivmonitor/inneklima`) til Mosquitto, og `hjemme.sh` publiserer MAC-adressene
-på nettet (`kollektivmonitor/hjemme`). `server.js` abonnerer, kontrollerer
-meldingene og leverer dem på `/api/status`. `index.html`, `style.css` og `app.js`
-henter dette med jevne mellomrom. Mangler en kilde, står det «–».
+Dette er versjonen for demo på skolen. Raspberry Pi 5 er selv Wi-Fi-tilgangspunkt
+(`PresenceLab`, 10.42.0.1), og Mosquitto krever innlogging. Hjemmeversjonen ligger
+på `main`. Koden ellers er den samme.
 
-## Installere
+## Raspberry Pi 5
 
-Krever Node 18 eller nyere og Mosquitto. For Pi-en, se «Kjøre på Raspberry Pi 5» under.
-
-    brew install mosquitto                                   # Mac
+    sudo apt install nodejs npm
+    git clone -b skole-demo https://github.com/Melkeraaen/kollektivmonitor-display.git
+    cd kollektivmonitor-display
     npm install
-
-På Macen gir `arp-scan` sikrest «hjemme», og må kunne kjøres uten passord:
-
-    echo "$USER ALL=(root) NOPASSWD: /opt/homebrew/bin/arp-scan" | sudo tee /etc/sudoers.d/arp-scan
-
-Uten den leses ARP-cachen (`arp -a`).
-
-## Konfigurere
-
     cp config.example.json config.json
 
-Fyll inn navn og MAC-adresse for hver person. Bruk telefonens faste Wi-Fi-adresse.
+Ikke installer `arp-scan` og ikke kopier `mosquitto.conf`. Hotspoten og Mosquitto
+finnes fra før.
 
-ESP-ene lastes opp med Arduino IDE og trenger biblioteket PubSubClient. Kopier
-`wifi_secrets.example.h` til `wifi_secrets.h` i samme mappe, og fyll inn nettet,
-IP-adressen til maskinen som kjører Mosquitto og MQTT-brukeren.
-
-## Starte
-
-    ./start.sh    # starter Mosquitto (hvis den ikke kjører), backend, hjemme.sh og skjerm
-
-Se meldingene fra ESP-ene: `mosquitto_sub -h localhost -t 'kollektivmonitor/#' -v`
-
-## Kjøre på Raspberry Pi 5
-
-Pi-en er allerede hotspot for et annet prosjekt (`PresenceLab`, 2,4 GHz, `10.42.0.1`),
-og Mosquitto kjører som tjeneste med passord. KollektivMonitor bruker begge, med egen
-MQTT-bruker og egne emner, og endrer ikke oppsettet.
-
-**1. Pakker og kode.** `arp-scan` skal ikke installeres: den ville skannet `eth0`,
-som er NTNU-nettet. `hjemme.sh` spør hotspoten i stedet.
-
-    sudo apt update && sudo apt install -y nodejs npm
-    cd ~ && git clone https://github.com/Melkeraaen/kollektivmonitor-display.git
-    cd kollektivmonitor-display && npm install
-
-**2. MQTT-bruker.** Ikke kopier inn `mosquitto.conf`, den kolliderer med lytterne som
-finnes. Legg brukeren til i passordfila uten `-c` (den lager fila på nytt og sletter de
-andre brukerne). Bruk bare bokstaver og tall i passordet, siden det står i en URL.
+Lag en MQTT-bruker (uten `-c`, ellers slettes de andre brukerne):
 
     sudo mosquitto_passwd /etc/mosquitto/presence-passwd kollektivmonitor
     sudo systemctl reload mosquitto
-    mosquitto_sub -u kollektivmonitor -P <passord> -t 'kollektivmonitor/#' -W 3   # «Timed out» = innlogget
 
-**3. Hotspot.** Finnes allerede. Sjekk den, og hent Wi-Fi-passordet til `wifi_secrets.h`
-i begge ESP-mappene:
-
-    iw dev wlan0 info | grep -E 'ssid|type'        # ssid PresenceLab, type AP
-    nmcli -s -g 802-11-wireless-security.psk connection show PresenceLab
-
-**4. `config.json`.**
-
-    cp config.example.json config.json
-
-Sett `"mqttUrl": "mqtt://kollektivmonitor:<passord>@localhost:1883"`. Koble telefonene
-til `PresenceLab` (iPhone: *Privat Wi-Fi-adresse* = **Fast**) og les av MAC-adressene:
+I `config.json`: sett `"mqttUrl": "mqtt://kollektivmonitor:<passord>@localhost:1883"`,
+og fyll inn navn og MAC-adresse for hver telefon. Navnene må være like som i
+`BEBOERE` i `esp/soppel/soppel.ino`. Koble telefonene til `PresenceLab` og les av
+MAC-adressene:
 
     iw dev wlan0 station dump | grep ^Station
 
-Navnene må være skrevet likt som `BEBOERE` i `esp/soppel/soppel.ino`.
+## ESP-ene
 
-**5. Starte.** Systemet startes for hånd, ikke ved oppstart, siden Pi-en også brukes
-til andre ting. Kjør det fra en terminal på Pi-ens eget skrivebord, ikke over SSH, for
-der finner ikke Chromium skjermen:
+1. Installer bibliotekene PubSubClient og Adafruit AHTX0 i Arduino IDE.
+2. Kopier `wifi_secrets.example.h` til `wifi_secrets.h` i begge mappene under `esp/`.
+   Fyll inn passordet til hotspoten og MQTT-brukeren.
+3. Last opp `esp/soppel/soppel.ino` på board *Adafruit ESP32 Feather*.
+4. Last opp `esp/inneklima/inneklima.ino` på board *UM FeatherS3*.
 
-    cd ~/kollektivmonitor-display && ./start.sh
+## Starte
 
-Skjermen viser «Venter på …» til ESP-ene sender. Alt+F4 lukker ikke fullskjermen.
-Bruk `pkill chromium` over SSH, eller fra tekstkonsollen (Ctrl+Alt+F2, logg inn, og
-Ctrl+Alt+F7 tilbake). Da stopper også backend og `hjemme.sh`.
+Fra en terminal på Pi-ens skrivebord (ikke over SSH):
 
-**6. Sjekk.** Mens systemet kjører, over SSH:
+    ./start.sh
 
-    curl -s localhost:8080/api/status
-    mosquitto_sub -u kollektivmonitor -P <passord> -t 'kollektivmonitor/#' -v
+Skjermen lukkes med `pkill chromium`.
+
+## Tester
+
+    ./tester/kjor_alle.sh
+
+Tester ESP-koden, `app.js` og `server.js` uten maskinvare. Se `tester/README.md`.
