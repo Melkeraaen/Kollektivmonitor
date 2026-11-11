@@ -51,9 +51,3 @@ Fra en terminal på Pi-ens skrivebord (ikke over SSH):
     ./start.sh
 
 Skjermen lukkes med `pkill chromium`.
-
-## Tester
-
-    ./tester/kjor_alle.sh
-
-Tester ESP-koden, `app.js` og `server.js` uten maskinvare. Se `tester/README.md`.
