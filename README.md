@@ -16,8 +16,8 @@ på `main`. Koden ellers er den samme.
 ## Raspberry Pi 5
 
     sudo apt install nodejs npm
-    git clone -b skole-demo https://github.com/Melkeraaen/kollektivmonitor-display.git
-    cd kollektivmonitor-display
+    git clone -b skole-demo https://github.com/Melkeraaen/Kollektivmonitor.git
+    cd Kollektivmonitor
     npm install
     cp config.example.json config.json
 
