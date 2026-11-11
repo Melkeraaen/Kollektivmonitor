@@ -1,5 +1,5 @@
 {
-	"name": "kollektivmonitor-display",
+	"name": "kollektivmonitor",
 	"private": true,
 	"description": "Skjermdelen av KollektivMonitor (TTK8)",
 	"scripts": {

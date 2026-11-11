@@ -14,8 +14,8 @@ skolen) ligger i branchen `skole-demo`.
 
 ## Raspberry Pi
 
-    git clone https://github.com/Melkeraaen/kollektivmonitor-display.git
-    cd kollektivmonitor-display
+    git clone https://github.com/Melkeraaen/Kollektivmonitor.git
+    cd Kollektivmonitor
     sudo apt install nodejs npm mosquitto mosquitto-clients chromium arp-scan
     sudo cp mosquitto.conf /etc/mosquitto/conf.d/kollektivmonitor.conf
     sudo systemctl restart mosquitto
