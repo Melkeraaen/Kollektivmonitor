@@ -1,35 +1,4 @@
-/* soppel - ESP32 med HC-SR04 i lokket paa soppelbotta
- *
- * Maaler hvor full botta er, merker naar den er tomt, og holder styr paa
- * hvem som har soppelansvaret. Statusen publiseres som JSON paa
- * kollektivmonitor/soppel. Ansvaret lagres i flash (Preferences) her og
- * ikke paa Pi-en, saa det overlever at noen av dem er av en stund.
- *
- * Board:     "Adafruit ESP32 Feather" (HUZZAH32) i esp32-kjernen
- * Sensor:    HC-SR04, festet oeverst i botta og pekt rett ned
- * Bibliotek: PubSubClient
- *
- * Kobling:
- *   VCC  -> USB (5 V), sensoren maaler daarlig paa 3,3 V
- *   GND  -> GND
- *   TRIG -> GPIO 26 (A0)
- *   ECHO -> spenningsdeler -> GPIO 25 (A1)
- *   ECHO er 5 V. Deleren er 1 kOhm fra ECHO til pinnen og 2 kOhm til GND.
- *
- * Tasks:
- *   maaleTask     prio 3  median av fem ekko, legges i maaleKo
- *   tilstandTask  prio 2  fyllingsgrad, nivaa, tomming og ansvar
- *   nettTask      prio 1  Wi-Fi og MQTT, publiserer hvert 5. sekund
- *   maaleTask har hoyest prioritet fordi pulseIn() maaler tid. statusMutex
- *   beskytter status, som tilstandTask skriver og nettTask leser.
- *
- * Meldingen:
- *   {"ok":true,"fyll":72,"nivaa":"delvis","avstand_cm":18.3,
- *    "ansvarlig":"Henrik","neste":"Sigurd",...}
- *   {"ok":false,"feil":"...","ansvarlig":"Henrik","neste":"Sigurd"}
- *
- * Kopier wifi_secrets.example.h til wifi_secrets.h og fyll inn.
- */
+// Soppelbotta: maaler fyllingsgraden og holder styr paa hvem som skal tomme.
 
 #include <WiFi.h>
 #include <WiFiMulti.h>

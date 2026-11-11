@@ -1,9 +1,5 @@
 #!/bin/sh
-# Finner MAC-adressene som er på nettet, og publiserer dem over MQTT på
-# kollektivmonitor/hjemme, én per linje. server.js matcher dem mot config.json.
-#
-# Eget skript og ikke inni server.js: macOS skjuler ARP-tabellen for
-# prosesser som Node starter, men ikke for prosesser startet fra skallet.
+# Finner MAC-adressene på nettet og sender dem over MQTT til server.js.
 cd "$(dirname "$0")"
 # iw ligger i /usr/sbin, som ikke alltid er med i PATH når skrivebordet starter skriptet.
 PATH="$PATH:/usr/sbin"
