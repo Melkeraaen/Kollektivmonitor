@@ -23,7 +23,7 @@ static const uint8_t PIN_ECHO = 25;
 static const float AVSTAND_TOM_CM = 45.0;
 static const float AVSTAND_FULL_CM = 8.0;
 
-// Nivaaer i prosent: tom < 15, delvis, nesten full > 75, full > 90.
+// Nivaaer i prosent: tom <= 15, delvis, nesten full >= 75, full >= 90.
 // Hysteresen hindrer at nivaaet blafrer naar fyllingen ligger paa en grense.
 static const float GRENSE_TOM = 15.0;
 static const float GRENSE_NESTEN_FULL = 75.0;
@@ -288,7 +288,7 @@ static void tilstandTask(void *) {
   Maaling m;
 
   for (;;) {
-    // Ingenting paa tre intervaller betyr at måleTask har hengt seg
+    // Ingenting paa tre intervaller betyr at maaleTask har hengt seg
     if (xQueueReceive(maaleKo, &m, pdMS_TO_TICKS(3 * MAALEINTERVALL_MS)) != pdTRUE) {
       xSemaphoreTake(statusMutex, portMAX_DELAY);
       strlcpy(status.feil, "maaleTask svarer ikke", sizeof(status.feil));

@@ -13,10 +13,9 @@ while true; do
 		# arp-scan spør hver adresse på nettet
 		:
 	elif command -v ip >/dev/null; then
-
 		TABELL=$(ip neigh show | grep REACHABLE)
 	else
-		TABELL=$(arp -an) 
+		TABELL=$(arp -an)
 	fi
 
 	echo "$TABELL" | grep -oiE '([0-9a-f]{1,2}:){5}[0-9a-f]{1,2}' | mosquitto_pub -L "$MQTT/kollektivmonitor/hjemme" -s

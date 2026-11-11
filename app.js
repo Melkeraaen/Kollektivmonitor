@@ -7,7 +7,6 @@ function norsk(tall, desimaler) {
 }
 
 // Den ansvarlige regnes bare som borte når skanningen faktisk sier det.
-
 // Da foreslås noen som er hjemme, med neste i rekka først.
 function finnVikar(ansvarlig, neste, hjemme) {
 	if (!ansvarlig || !hjemme) return { borte: false, vikar: null };

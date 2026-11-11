@@ -22,8 +22,6 @@ if [ "$(uname)" = "Darwin" ]; then
 	open "http://localhost:$PORT"
 	wait $SERVER
 else
-
 	CHROMIUM=$(command -v chromium || command -v chromium-browser)
-	
 	"$CHROMIUM" --kiosk --noerrdialogs --disable-infobars --incognito --password-store=basic "http://localhost:$PORT"
 fi

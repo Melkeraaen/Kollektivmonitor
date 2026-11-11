@@ -69,7 +69,6 @@ function vurderTemperatur(temperatur) {
 	else if (inneklima.anbefaling === "ned" && temperatur <= hoy - hysterese) inneklima.anbefaling = "uendret";
 }
 
-
 function normaliserMac(mac) {
 	return mac.trim().toLowerCase().split(":").map((del) => del.padStart(2, "0")).join(":");
 }
