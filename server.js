@@ -1,6 +1,4 @@
-// Tar imot status fra de to ESP-ene og fra hjemme.sh over MQTT, og leverer
-// alt som JSON på /api/status. Serverer også index.html, style.css og app.js.
-// Krever Node 18 eller nyere og en MQTT-broker (Mosquitto).
+// Tar imot meldingene over MQTT og gir skjermen dataene på /api/status.
 
 const http = require("http");
 const fs = require("fs");

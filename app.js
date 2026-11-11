@@ -1,5 +1,4 @@
-// Henter /api/status med jevne mellomrom og fyller de tre boksene.
-// Mangler en verdi, står det «–», og feilstatusen vises under.
+// Henter /api/status og oppdaterer skjermen.
 
 let intervallSek = 10;
 

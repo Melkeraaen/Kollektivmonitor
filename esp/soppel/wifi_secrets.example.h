@@ -1,10 +1,4 @@
-/* Mal for wifi_secrets.h. Kopier til wifi_secrets.h i samme mappe og fyll
- * inn. wifi_secrets.h er i .gitignore, saa her skal det bare vaere
- * plassholdere.
- *
- * ESP-en kobler til det sterkeste nettet i lista. Alle maa vaere 2,4 GHz
- * (paa iPhone-hotspot: slaa paa "Maksimer kompatibilitet").
- */
+// Mal: kopier til wifi_secrets.h og fyll inn. Nettene maa vaere 2,4 GHz.
 
 #pragma once
 

@@ -1,26 +1,4 @@
-/* inneklima - ESP32-S3 med AHT20
- *
- * Publiserer innetemperatur og luftfuktighet som JSON paa
- * kollektivmonitor/inneklima. server.js paa Pi-en vurderer temperaturen.
- *
- * Board:     "UM FeatherS3" (esp32:esp32:um_feathers3). Med "Adafruit
- *            Feather ESP32-S3" blir I2C-pinnene feil, og den melder
- *            "fant ingen sensor".
- * Sensor:    AHT20 paa I2C
- * Bibliotek: Adafruit AHTX0 (med Unified Sensor og BusIO) og PubSubClient
- *
- * Tasks, samme oppbygning som esp/soppel/:
- *   sensorTask  prio 2  leser AHT20 hvert 10. sekund
- *   nettTask    prio 1  Wi-Fi og MQTT, publiserer hvert 10. sekund
- *   maalingMutex gjor at temperatur og fuktighet i en melding er fra
- *   samme maaling.
- *
- * Meldingen:
- *   {"ok":true,"temperatur":21.4,"fuktighet":38.2,"alder_s":3,...}
- *   {"ok":false,"feil":"..."}
- *
- * Kopier wifi_secrets.example.h til wifi_secrets.h og fyll inn.
- */
+// Inneklima: maaler temperatur og luftfuktighet med AHT20.
 
 #include <WiFi.h>
 #include <WiFiMulti.h>
