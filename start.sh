@@ -22,8 +22,8 @@ if [ "$(uname)" = "Darwin" ]; then
 	open "http://localhost:$PORT"
 	wait $SERVER
 else
-	# Heter chromium på nyere Raspberry Pi OS og chromium-browser på eldre.
+
 	CHROMIUM=$(command -v chromium || command -v chromium-browser)
-	# --password-store=basic: ellers ber Chromium om å låse opp nøkkelringen, og dialogen dekker skjermen.
+	
 	"$CHROMIUM" --kiosk --noerrdialogs --disable-infobars --incognito --password-store=basic "http://localhost:$PORT"
 fi

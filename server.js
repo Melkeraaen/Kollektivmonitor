@@ -69,7 +69,7 @@ function vurderTemperatur(temperatur) {
 	else if (inneklima.anbefaling === "ned" && temperatur <= hoy - hysterese) inneklima.anbefaling = "uendret";
 }
 
-// macOS skriver oktetter uten ledende null (aa:bb:cc:dd:ee:3).
+
 function normaliserMac(mac) {
 	return mac.trim().toLowerCase().split(":").map((del) => del.padStart(2, "0")).join(":");
 }

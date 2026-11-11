@@ -1,4 +1,4 @@
-// Soppelbotta: maaler fyllingsgraden og holder styr paa hvem som skal tomme.
+// Soppelbotta: måler fyllingsgraden og holder styr paa hvem som skal tomme.
 
 #include <WiFi.h>
 #include <WiFiMulti.h>
@@ -288,7 +288,7 @@ static void tilstandTask(void *) {
   Maaling m;
 
   for (;;) {
-    // Ingenting paa tre intervaller betyr at maaleTask har hengt seg
+    // Ingenting paa tre intervaller betyr at måleTask har hengt seg
     if (xQueueReceive(maaleKo, &m, pdMS_TO_TICKS(3 * MAALEINTERVALL_MS)) != pdTRUE) {
       xSemaphoreTake(statusMutex, portMAX_DELAY);
       strlcpy(status.feil, "maaleTask svarer ikke", sizeof(status.feil));
